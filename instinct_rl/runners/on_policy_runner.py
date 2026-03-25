@@ -433,7 +433,12 @@ class OnPolicyRunner:
         if self.cfg.get("ckpt_manipulator", False):
             # suppose to be a string specifying which function to use
             print("\033[1;36m Warning: using a hacky way to load the model. \033[0m")
-            loaded_dict = getattr(ckpt_manipulator, self.cfg["ckpt_manipulator"])(
+            if ":" in self.cfg["ckpt_manipulator"]:
+                ckpt_manipulator_module = importlib.import_module(self.cfg["ckpt_manipulator"].split(":")[0])
+                ckpt_manipulator_func = getattr(ckpt_manipulator_module, self.cfg["ckpt_manipulator"].split(":")[1])
+            else:
+                ckpt_manipulator_func = getattr(ckpt_manipulator, self.cfg["ckpt_manipulator"])
+            loaded_dict = ckpt_manipulator_func(
                 loaded_dict,
                 self.alg.state_dict(),
                 **self.cfg.get("ckpt_manipulator_kwargs", {}),
