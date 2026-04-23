@@ -34,6 +34,7 @@ from .ppo import PPO
 from .tppo import TPPO
 from .vae_distill import VaeDistill
 from .wasabi import WasabiAlgoMixin, WasabiPPO
+from .wasabi_memory_attention import WasabiMemoryAttentionPPO
 
 
 class WasabiEstimatorPPO(WasabiAlgoMixin, EstimatorPPO):
@@ -52,5 +53,6 @@ __all__ = [
     "LipschitzPPO",
     "VaeDistill",
     "WasabiPPO",
+    "WasabiMemoryAttentionPPO",
     "WasabiEstimatorPPO",
 ]

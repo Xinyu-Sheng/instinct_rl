@@ -73,7 +73,9 @@ def build_normalizer(
         if normalizer_class_name == "EmpiricalNormalization":
             normalizer = EmpiricalNormalization(shape=input_shape, **normalizer_kwargs)
         elif normalizer_class_name == "EmpiricalDiscountedVariationNormalization":
-            normalizer = EmpiricalDiscountedVariationNormalization(shape=input_shape, **normalizer_kwargs)
+            normalizer = EmpiricalDiscountedVariationNormalization(
+                shape=input_shape, **normalizer_kwargs
+            )
         elif ":" in normalizer_class_name:
             module_name, class_name = normalizer_class_name.split(":")
             module = importlib.import_module(module_name)

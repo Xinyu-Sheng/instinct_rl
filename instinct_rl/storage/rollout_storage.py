@@ -77,7 +77,14 @@ class RolloutStorage:
     )
 
     def __init__(
-        self, num_envs, num_transitions_per_env, obs_shape, critic_obs_shape, actions_shape, num_rewards=1, device="cpu"
+        self,
+        num_envs,
+        num_transitions_per_env,
+        obs_shape,
+        critic_obs_shape,
+        actions_shape,
+        num_rewards=1,
+        device="cpu",
     ):
         self.device = device
 
@@ -87,24 +94,44 @@ class RolloutStorage:
         self.num_rewards = num_rewards
 
         # Core
-        self.observations = torch.zeros(num_transitions_per_env, num_envs, *obs_shape, device=self.device)
+        self.observations = torch.zeros(
+            num_transitions_per_env, num_envs, *obs_shape, device=self.device
+        )
         if critic_obs_shape[0] is not None:
             self.critic_observations = torch.zeros(
                 num_transitions_per_env, num_envs, *critic_obs_shape, device=self.device
             )
         else:
             self.critic_observations = None
-        self.rewards = torch.zeros(num_transitions_per_env, num_envs, num_rewards, device=self.device)
-        self.actions = torch.zeros(num_transitions_per_env, num_envs, *actions_shape, device=self.device)
-        self.dones = torch.zeros(num_transitions_per_env, num_envs, 1, device=self.device).byte()
+        self.rewards = torch.zeros(
+            num_transitions_per_env, num_envs, num_rewards, device=self.device
+        )
+        self.actions = torch.zeros(
+            num_transitions_per_env, num_envs, *actions_shape, device=self.device
+        )
+        self.dones = torch.zeros(
+            num_transitions_per_env, num_envs, 1, device=self.device
+        ).byte()
 
         # For PPO
-        self.actions_log_prob = torch.zeros(num_transitions_per_env, num_envs, 1, device=self.device)
-        self.values = torch.zeros(num_transitions_per_env, num_envs, num_rewards, device=self.device)
-        self.returns = torch.zeros(num_transitions_per_env, num_envs, num_rewards, device=self.device)
-        self.advantages = torch.zeros(num_transitions_per_env, num_envs, num_rewards, device=self.device)
-        self.mu = torch.zeros(num_transitions_per_env, num_envs, *actions_shape, device=self.device)
-        self.sigma = torch.zeros(num_transitions_per_env, num_envs, *actions_shape, device=self.device)
+        self.actions_log_prob = torch.zeros(
+            num_transitions_per_env, num_envs, 1, device=self.device
+        )
+        self.values = torch.zeros(
+            num_transitions_per_env, num_envs, num_rewards, device=self.device
+        )
+        self.returns = torch.zeros(
+            num_transitions_per_env, num_envs, num_rewards, device=self.device
+        )
+        self.advantages = torch.zeros(
+            num_transitions_per_env, num_envs, num_rewards, device=self.device
+        )
+        self.mu = torch.zeros(
+            num_transitions_per_env, num_envs, *actions_shape, device=self.device
+        )
+        self.sigma = torch.zeros(
+            num_transitions_per_env, num_envs, *actions_shape, device=self.device
+        )
 
         self.num_transitions_per_env = num_transitions_per_env
         self.num_envs = num_envs
@@ -143,7 +170,9 @@ class RolloutStorage:
 
         # initialize if needed
         if self.saved_hidden_states is None:
-            self.saved_hidden_states = buffer_from_example(hidden_states, self.observations.shape[0])
+            self.saved_hidden_states = buffer_from_example(
+                hidden_states, self.observations.shape[0]
+            )
         # copy the states
         self.saved_hidden_states[self.step] = hidden_states
 
@@ -158,20 +187,29 @@ class RolloutStorage:
             else:
                 next_values = self.values[step + 1]
             next_is_not_terminal = 1.0 - self.dones[step].float()
-            delta = self.rewards[step] + next_is_not_terminal * gamma * next_values - self.values[step]
+            delta = (
+                self.rewards[step]
+                + next_is_not_terminal * gamma * next_values
+                - self.values[step]
+            )
             advantage = delta + next_is_not_terminal * gamma * lam * advantage
             self.returns[step] = advantage + self.values[step]
 
         # Compute and normalize the advantages
         self.advantages = self.returns - self.values
-        self.advantages = (self.advantages - self.advantages.mean()) / (self.advantages.std() + 1e-8)
+        self.advantages = (self.advantages - self.advantages.mean()) / (
+            self.advantages.std() + 1e-8
+        )
 
     def get_statistics(self):
         done = self.dones
         done[-1] = 1
         flat_dones = done.permute(1, 0, 2).reshape(-1, 1)
         done_indices = torch.cat(
-            (flat_dones.new_tensor([-1], dtype=torch.int64), flat_dones.nonzero(as_tuple=False)[:, 0])
+            (
+                flat_dones.new_tensor([-1], dtype=torch.int64),
+                flat_dones.nonzero(as_tuple=False)[:, 0],
+            )
         )
         trajectory_lengths = done_indices[1:] - done_indices[:-1]
         return trajectory_lengths.float().mean(), self.rewards.mean()
@@ -179,7 +217,9 @@ class RolloutStorage:
     def mini_batch_generator(self, num_mini_batches, num_epochs=8):
         batch_size = self.num_envs * self.num_transitions_per_env
         mini_batch_size = batch_size // num_mini_batches
-        indices = torch.randperm(num_mini_batches * mini_batch_size, requires_grad=False, device=self.device)
+        indices = torch.randperm(
+            num_mini_batches * mini_batch_size, requires_grad=False, device=self.device
+        )
         T_indices = (indices // self.num_envs).to(torch.long)
         B_indices = (indices % self.num_envs).to(torch.long)
 
@@ -194,11 +234,13 @@ class RolloutStorage:
 
     # for RNNs only
     def recurrent_mini_batch_generator(self, num_mini_batches, num_epochs=8):
-        self._padded_obs_trajectories, self._trajectory_masks = split_and_pad_trajectories(
-            self.observations, self.dones
+        self._padded_obs_trajectories, self._trajectory_masks = (
+            split_and_pad_trajectories(self.observations, self.dones)
         )
         if self.critic_observations is not None:
-            self._padded_critic_obs_trajectories, _ = split_and_pad_trajectories(self.critic_observations, self.dones)
+            self._padded_critic_obs_trajectories, _ = split_and_pad_trajectories(
+                self.critic_observations, self.dones
+            )
 
         mini_batch_size = self.num_envs // num_mini_batches
         for ep in range(num_epochs):
@@ -223,7 +265,9 @@ class RolloutStorage:
 
                 first_traj = last_traj
 
-    def get_minibatch_from_selection(self, T_select, B_select, padded_B_slice=None, prev_done_mask=None):
+    def get_minibatch_from_selection(
+        self, T_select, B_select, padded_B_slice=None, prev_done_mask=None
+    ):
         """Extract minibatch based on selected indices/slice.
         An independent method allows override by subclasses.
         Args:
@@ -237,7 +281,9 @@ class RolloutStorage:
         if padded_B_slice is None:
             obs_batch = self.observations[T_select, B_select]
             critic_obs_batch = (
-                obs_batch if self.critic_observations is None else self.critic_observations[T_select, B_select]
+                obs_batch
+                if self.critic_observations is None
+                else self.critic_observations[T_select, B_select]
             )
             hid_batch = None
             obs_mask_batch = None
@@ -255,7 +301,9 @@ class RolloutStorage:
             prev_done_mask = prev_done_mask.permute(1, 0)  # (T, B) -> (B, T)
             hid_batch = buffer_method(
                 buffer_method(
-                    buffer_method(self.saved_hidden_states, "permute", 2, 0, 1, 3)[prev_done_mask][padded_B_slice],
+                    buffer_method(self.saved_hidden_states, "permute", 2, 0, 1, 3)[
+                        prev_done_mask
+                    ][padded_B_slice],
                     "transpose",
                     1,
                     0,
@@ -317,7 +365,10 @@ class QueueRolloutStorage(RolloutStorage):
         """Expand the buffer size in this way so that the mini_batch_generator will not output
         the buffer where no data has been stored
         """
-        expand_size = int(self.buffer_dilation_ratio * self.num_timesteps_each_rollout - self.num_transitions_per_env)
+        expand_size = int(
+            self.buffer_dilation_ratio * self.num_timesteps_each_rollout
+            - self.num_transitions_per_env
+        )
         expand_size = min(expand_size, self.num_timesteps_each_rollout)
         self.num_transitions_per_env += expand_size
 
@@ -326,7 +377,9 @@ class QueueRolloutStorage(RolloutStorage):
         self.observations = torch.cat(
             [
                 self.observations,
-                torch.zeros(expand_size, self.num_envs, *self.obs_shape, device=self.device),
+                torch.zeros(
+                    expand_size, self.num_envs, *self.obs_shape, device=self.device
+                ),
             ],
             dim=0,
         ).contiguous()
@@ -334,7 +387,12 @@ class QueueRolloutStorage(RolloutStorage):
             self.critic_observations = torch.cat(
                 [
                     self.critic_observations,
-                    torch.zeros(expand_size, self.num_envs, *self.critic_obs_shape, device=self.device),
+                    torch.zeros(
+                        expand_size,
+                        self.num_envs,
+                        *self.critic_obs_shape,
+                        device=self.device,
+                    ),
                 ],
                 dim=0,
             ).contiguous()
@@ -348,7 +406,9 @@ class QueueRolloutStorage(RolloutStorage):
         self.actions = torch.cat(
             [
                 self.actions,
-                torch.zeros(expand_size, self.num_envs, *self.actions_shape, device=self.device),
+                torch.zeros(
+                    expand_size, self.num_envs, *self.actions_shape, device=self.device
+                ),
             ],
             dim=0,
         ).contiguous()
@@ -392,14 +452,18 @@ class QueueRolloutStorage(RolloutStorage):
         self.mu = torch.cat(
             [
                 self.mu,
-                torch.zeros(expand_size, self.num_envs, *self.actions_shape, device=self.device),
+                torch.zeros(
+                    expand_size, self.num_envs, *self.actions_shape, device=self.device
+                ),
             ],
             dim=0,
         ).contiguous()
         self.sigma = torch.cat(
             [
                 self.sigma,
-                torch.zeros(expand_size, self.num_envs, *self.actions_shape, device=self.device),
+                torch.zeros(
+                    expand_size, self.num_envs, *self.actions_shape, device=self.device
+                ),
             ],
             dim=0,
         ).contiguous()
@@ -428,7 +492,9 @@ class QueueRolloutStorage(RolloutStorage):
     def clear(self):
         """Not return the self.step to 0 but check whether it needs to expand the buffer."""
         if self.step >= self.num_transitions_per_env and not self.buffer_full:
-            _ = self.expand_buffer_once()  # Then self.num_transitions_per_env is updated
+            _ = (
+                self.expand_buffer_once()
+            )  # Then self.num_transitions_per_env is updated
             print("QueueRolloutStorage: rollout storage expanded.")
 
     @torch.no_grad()
@@ -461,7 +527,9 @@ class QueueRolloutStorage(RolloutStorage):
         self.sigma = self.swap_from_cursor(self.sigma)
         if not self.saved_hidden_states is None:
             with torch.no_grad():
-                self.saved_hidden_states = buffer_swap(self.saved_hidden_states, self.step, contiguous=True)
+                self.saved_hidden_states = buffer_swap(
+                    self.saved_hidden_states, self.step, contiguous=True
+                )
         self.step = 0
 
     def recurrent_mini_batch_generator(self, num_mini_batches, num_epochs=8):
@@ -496,7 +564,9 @@ class ActionLabelRollout(QueueRolloutStorage):
         self.action_labels = torch.cat(
             [
                 self.action_labels,
-                torch.zeros(expand_size, self.num_envs, *self.actions_shape, device=self.device),
+                torch.zeros(
+                    expand_size, self.num_envs, *self.actions_shape, device=self.device
+                ),
             ],
             dim=0,
         ).contiguous()
@@ -510,8 +580,12 @@ class ActionLabelRollout(QueueRolloutStorage):
         self.action_labels = self.swap_from_cursor(self.action_labels)
         return super().untie_buffer_loop()
 
-    def get_minibatch_from_selection(self, T_select, B_select, padded_B_slice=None, prev_done_mask=None):
-        minibatch = super().get_minibatch_from_selection(T_select, B_select, padded_B_slice, prev_done_mask)
+    def get_minibatch_from_selection(
+        self, T_select, B_select, padded_B_slice=None, prev_done_mask=None
+    ):
+        minibatch = super().get_minibatch_from_selection(
+            T_select, B_select, padded_B_slice, prev_done_mask
+        )
         action_label_batch = self.action_labels[T_select, B_select]
 
         return ActionLabelRollout.MiniBatch(*minibatch, action_label_batch)
@@ -559,11 +633,16 @@ class SarsaRolloutStorage(RolloutStorage):
     def add_transitions(self, transition: Transition):
         if False:
             # For the running efficiency, will not check obs[step] == next_obs[step-1]
-            assert (transition.observations == self.next_observations[self.step - 1]).all(), (
+            assert (
+                transition.observations == self.next_observations[self.step - 1]
+            ).all(), (
                 "It is the user's responsibility to make sure that that the next_obs[step-1] == obs[step] (error in"
                 " observation) "
             )
-            assert (transition.critic_observations == self.next_critic_observations[self.step - 1]).all(), (
+            assert (
+                transition.critic_observations
+                == self.next_critic_observations[self.step - 1]
+            ).all(), (
                 "It is the user's responsibility to make sure that that the next_obs[step-1] == obs[step] (error in"
                 " privileged observation) "
             )
@@ -572,7 +651,9 @@ class SarsaRolloutStorage(RolloutStorage):
             # Because next_obs and obs shares the same memory.
             # Also assuming each rollout (by the runner) fills the rollout storage.
             self.next_observations[self.step].copy_(transition.next_observations)
-            self.next_critic_observations[self.step].copy_(transition.next_critic_observations)
+            self.next_critic_observations[self.step].copy_(
+                transition.next_critic_observations
+            )
         return super().add_transitions(transition)
 
     def recurrent_mini_batch_generator(self, num_mini_batches, num_epochs=8):
@@ -587,13 +668,19 @@ class SarsaRolloutStorage(RolloutStorage):
             )
         return super().recurrent_mini_batch_generator(num_mini_batches, num_epochs)
 
-    def get_minibatch_from_selection(self, T_slice, B_slice, padded_B_slice=None, prev_done_mask=None):
-        minibatch = super().get_minibatch_from_selection(T_slice, B_slice, padded_B_slice, prev_done_mask)
+    def get_minibatch_from_selection(
+        self, T_slice, B_slice, padded_B_slice=None, prev_done_mask=None
+    ):
+        minibatch = super().get_minibatch_from_selection(
+            T_slice, B_slice, padded_B_slice, prev_done_mask
+        )
 
         if padded_B_slice is None:
             next_obs_batch = self.next_observations[T_slice, B_slice]
             next_critic_obs_batch = (
-                next_obs_batch if self.critic_observations is None else self.next_critic_observations[T_slice, B_slice]
+                next_obs_batch
+                if self.critic_observations is None
+                else self.next_critic_observations[T_slice, B_slice]
             )
         else:
             next_obs_batch = self._padded_next_obs_trajectories[T_slice, B_slice]

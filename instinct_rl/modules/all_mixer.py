@@ -1,4 +1,4 @@
-""" A file put all mixin class combinations that are not only mixing ActorCritic or ActorCriticRecurrent"""
+"""A file put all mixin class combinations that are not only mixing ActorCritic or ActorCriticRecurrent"""
 
 from .actor_critic import ActorCritic
 from .actor_critic_recurrent import ActorCriticRecurrent
@@ -12,8 +12,12 @@ class EncoderStateAc(EstimatorMixin, EncoderActorCriticMixin, ActorCritic):
     pass
 
 
-class EncoderStateAcRecurrent(EstimatorMixin, EncoderActorCriticMixin, ActorCriticRecurrent):
-    def load_misaligned_state_dict(self, module, obs_segments, critic_obs_segments=None):
+class EncoderStateAcRecurrent(
+    EstimatorMixin, EncoderActorCriticMixin, ActorCriticRecurrent
+):
+    def load_misaligned_state_dict(
+        self, module, obs_segments, critic_obs_segments=None
+    ):
         pass
 
 

@@ -36,7 +36,10 @@ class EncoderActorCriticMixin:
         self.critic_encoder_configs = copy(critic_encoder_configs)
         encoder_class_name = encoder_configs.pop("class_name", "ParallelLayer")
         EncoderClass = (
-            getattr(importlib.import_module(encoder_class_name.split(":")[0]), encoder_class_name.split(":")[1])
+            getattr(
+                importlib.import_module(encoder_class_name.split(":")[0]),
+                encoder_class_name.split(":")[1],
+            )
             if ":" in encoder_class_name
             else getattr(instinct_modules, encoder_class_name)
         )
@@ -49,7 +52,9 @@ class EncoderActorCriticMixin:
         elif self.critic_encoder_configs is None:
             critic_encoders = None
         else:
-            critic_encoder_class_name = critic_encoder_configs.pop("class_name", "ParallelLayer")
+            critic_encoder_class_name = critic_encoder_configs.pop(
+                "class_name", "ParallelLayer"
+            )
             CriticEncoderClass = (
                 getattr(
                     importlib.import_module(critic_encoder_class_name.split(":")[0]),
@@ -95,10 +100,16 @@ class EncoderActorCriticMixin:
 
     def backbone_evaluate(self, flatten_observations, masks=None, hidden_states=None):
         """Evaluate the model with the backbone input, which is typically an MLP."""
-        return super().evaluate(flatten_observations, masks=masks, hidden_states=hidden_states)
+        return super().evaluate(
+            flatten_observations, masks=masks, hidden_states=hidden_states
+        )
 
     def evaluate(self, critic_observations, masks=None, hidden_states=None):
-        obs = self.critic_encoders(critic_observations) if self.critic_encoders is not None else critic_observations
+        obs = (
+            self.critic_encoders(critic_observations)
+            if self.critic_encoders is not None
+            else critic_observations
+        )
         return super().evaluate(obs, masks=masks, hidden_states=hidden_states)
 
     def forward(self, observations):
@@ -118,7 +129,9 @@ class EncoderActorCriticMixin:
         """Export the model as an ONNX file. Input should be batch-wise observations with batchsize 1."""
         self.eval()
         if encoder_as_seperate_file:
-            self.encoders.export_as_onnx(observations, filedir, encoder_as_seperate_file)
+            self.encoders.export_as_onnx(
+                observations, filedir, encoder_as_seperate_file
+            )
             with torch.no_grad():
                 obs = self.encoders(observations)
             super().export_as_onnx(obs, filedir)
@@ -134,8 +147,12 @@ class EncoderActorCriticMixin:
                     dynamo=True,
                     opset=17,
                 )
-                exported_program.save(os.path.join(filedir, "encoder_actor_critic.onnx"))
-                print(f"Exported encoder_actor_critic to {os.path.join(filedir, 'encoder_actor_critic.onnx')}")
+                exported_program.save(
+                    os.path.join(filedir, "encoder_actor_critic.onnx")
+                )
+                print(
+                    f"Exported encoder_actor_critic to {os.path.join(filedir, 'encoder_actor_critic.onnx')}"
+                )
 
 
 from .actor_critic import ActorCritic

@@ -21,7 +21,10 @@ class MoeLayer(nn.Module):
         self.act_fn = get_activation(activation)
         self.gate = self._build_gate(input_dim, num_experts, gate_hidden_dims)
         self.experts = nn.ModuleList(
-            [self._build_expert(input_dim, output_dim, expert_hidden_dims) for _ in range(num_experts)]
+            [
+                self._build_expert(input_dim, output_dim, expert_hidden_dims)
+                for _ in range(num_experts)
+            ]
         )
 
     def _build_gate(self, input_dim, num_experts, hidden_dims):
@@ -42,12 +45,22 @@ class MoeLayer(nn.Module):
             layers.append(self.act_fn)
             curr_dim = h
         if output_dim is not None:
-            layers.append(nn.Linear(curr_dim, output_dim))  # no activation for the last layer
+            layers.append(
+                nn.Linear(curr_dim, output_dim)
+            )  # no activation for the last layer
         return nn.Sequential(*layers)
 
     def forward(self, x):
-        gate_scores = F.softmax(self.gate(x), dim=-1)  # [batch, num_experts] # gate the expert outputs
+        leading_dims = x.shape[:-1]
+        x = x.reshape(-1, x.shape[-1])
+
+        gate_scores = F.softmax(self.gate(x), dim=-1)  # [batch, num_experts]
         expert_outputs = [expert(x) for expert in self.experts]
-        expert_outputs = torch.stack(expert_outputs, dim=1)  # [batch, num_experts, output_dim]
-        output = torch.einsum("be,beo->bo", gate_scores, expert_outputs)  # mix the expert outputs
-        return output
+        expert_outputs = torch.stack(
+            expert_outputs, dim=1
+        )  # [batch, num_experts, output_dim]
+        output = torch.einsum(
+            "be,beo->bo", gate_scores, expert_outputs
+        )  # mix the expert outputs
+
+        return output.reshape(*leading_dims, -1)

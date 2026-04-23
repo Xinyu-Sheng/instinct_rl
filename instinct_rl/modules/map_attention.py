@@ -1,4 +1,5 @@
 import math
+import os
 from copy import deepcopy
 from typing import Dict, List
 
@@ -109,7 +110,7 @@ class MapAttentionBlock(nn.Module):
         coords = torch.stack([grid_x, grid_y, z_values], dim=-1)  # (B, H, W, 3)
         return coords
 
-    def forward(self, flat_input: torch.Tensor):
+    def forward(self, flat_input: torch.Tensor, return_attn_weights: bool = False):
         # flat_input: (..., obs_dim)
         leading_dim = flat_input.shape[:-1]
         B = int(np.prod(leading_dim)) if len(leading_dim) > 0 else 1
@@ -153,9 +154,13 @@ class MapAttentionBlock(nn.Module):
 
         # attention: query shape (B, 1, d), key/value shape (B, LW, d)
         q = proprio_emb.unsqueeze(1)
-        attn_out, _ = self.attn(q, tokens, tokens)
+        attn_out, attn_weights = self.attn(q, tokens, tokens)
 
         map_encoding = attn_out.squeeze(1)  # (B, d)
+        if return_attn_weights:
+            # attn_weights from torch.nn.MultiheadAttention is averaged over heads by default
+            attn_weights = attn_weights.squeeze(1).reshape(batch_size, H, W)
+            return map_encoding, proprio_emb, attn_weights
 
         return map_encoding, proprio_emb
 
@@ -262,11 +267,22 @@ class MapAttentionEncoder(nn.Module):
         self.numel_output = get_subobs_size(self.output_segment)
         return self.output_segment
 
-    def forward(self, flat_input: torch.Tensor) -> torch.Tensor:
+    def forward(
+        self,
+        flat_input: torch.Tensor,
+        return_attn_weights: bool = False,
+    ) -> torch.Tensor:
         leading_dim = flat_input.shape[:-1]
         blocks_outputs = {}
+        blocks_attn = {}
         for block_name, block in self._blocks.items():
-            map_enc, proprio_emb = block(flat_input)
+            if return_attn_weights:
+                map_enc, proprio_emb, attn_weights = block(
+                    flat_input, return_attn_weights=True
+                )
+                blocks_attn[block_name] = attn_weights
+            else:
+                map_enc, proprio_emb = block(flat_input)
             blocks_outputs[self._output_component_name_prefix + block_name] = (
                 map_enc.reshape(*leading_dim, -1)
             )
@@ -286,7 +302,49 @@ class MapAttentionEncoder(nn.Module):
                         flat_input, [output_component_name], self.input_segments
                     ).reshape(*leading_dim, -1)
                 )
-        return torch.cat(outputs, dim=-1)
+        encoded = torch.cat(outputs, dim=-1)
+        if return_attn_weights:
+            return encoded, blocks_attn
+        return encoded
 
     def __str__(self):
         return f"MapAttentionEncoder(blocks={list(self._blocks.keys())})"
+
+    def export_as_onnx(
+        self,
+        flat_input: torch.Tensor,
+        filedir: str,
+        block_as_seperate_files: bool = True,
+    ):
+        """Export encoder as ONNX.
+
+        The attention encoder consumes the full flattened policy observation and emits
+        encoded features for the actor network. For compatibility with the existing
+        split-export path, the default output name follows the same ``<idx>-<block>``
+        pattern when a single block is used.
+        """
+        self.eval()
+        with torch.no_grad():
+            if block_as_seperate_files:
+                if len(self._blocks) != 1:
+                    raise NotImplementedError(
+                        "MapAttentionEncoder split export currently supports exactly one block."
+                    )
+                block_name = next(iter(self._blocks.keys()))
+                save_path = os.path.join(
+                    filedir, f"{self._sequential_idx}-{block_name}.onnx"
+                )
+            else:
+                save_path = os.path.join(filedir, "map_attention_encoder.onnx")
+
+            exported_program = torch.onnx.export(
+                self,
+                flat_input,
+                "/tmp/map_attention_encoder.onnx",
+                input_names=["input"],
+                output_names=["output"],
+                dynamo=True,
+                opset_version=18,
+            )
+            exported_program.save(save_path)
+            print(f"Exported map_attention encoder to {save_path}")

@@ -71,14 +71,22 @@ class PPO:
                 The length of the list should be the same as the number of rewards from the environment (in case of multi-critic setting).
         """
         if kwargs:
-            print("\033[43;33mWarning: PPO init got extra kwargs:", kwargs.keys(), "\033[0m")
+            print(
+                "\033[43;33mWarning: PPO init got extra kwargs:",
+                kwargs.keys(),
+                "\033[0m",
+            )
         self.device = device
 
         self.desired_kl = desired_kl
         self.schedule = schedule
         self.learning_rate = learning_rate
         self.auxiliary_reward_per_env_reward_coefs = (
-            torch.tensor(auxiliary_reward_per_env_reward_coefs, device=self.device).unsqueeze(0)  # (1, num_rewards)
+            torch.tensor(
+                auxiliary_reward_per_env_reward_coefs, device=self.device
+            ).unsqueeze(
+                0
+            )  # (1, num_rewards)
             if len(auxiliary_reward_per_env_reward_coefs) > 0
             else 1.0
         )
@@ -86,7 +94,9 @@ class PPO:
         self.actor_critic = actor_critic
         self.actor_critic.to(self.device)
         self.storage = None  # initialized later
-        self.optimizer = getattr(optim, optimizer_class_name)(self.actor_critic.parameters(), lr=learning_rate)
+        self.optimizer = getattr(optim, optimizer_class_name)(
+            self.actor_critic.parameters(), lr=learning_rate
+        )
 
         # PPO parameters
         self.clip_param = clip_param
@@ -104,20 +114,28 @@ class PPO:
         self.max_grad_norm = max_grad_norm
         self.use_clipped_value_loss = use_clipped_value_loss
         self.clip_min_std = (
-            torch.tensor(clip_min_std, device=self.device) if isinstance(clip_min_std, (tuple, list)) else clip_min_std
+            torch.tensor(clip_min_std, device=self.device)
+            if isinstance(clip_min_std, (tuple, list))
+            else clip_min_std
         )
 
         # algorithm status
         self.current_learning_iteration = 0
 
-    def init_storage(self, num_envs, num_transitions_per_env, obs_format, num_actions, num_rewards=1):
+    def init_storage(
+        self, num_envs, num_transitions_per_env, obs_format, num_actions, num_rewards=1
+    ):
         """
         Args:
             num_rewards: int, in case of multi-reward setting, with multiple critic networks.
         """
         self.transition = RolloutStorage.Transition()
         obs_size = get_subobs_size(obs_format["policy"])
-        critic_obs_size = get_subobs_size(obs_format.get("critic")) if "critic" in obs_format else None
+        critic_obs_size = (
+            get_subobs_size(obs_format.get("critic"))
+            if "critic" in obs_format
+            else None
+        )
         self.storage = RolloutStorage(
             num_envs,
             num_transitions_per_env,
@@ -139,8 +157,12 @@ class PPO:
             self.transition.hidden_states = self.actor_critic.get_hidden_states()
         # Compute the actions and values
         self.transition.actions = self.actor_critic.act(obs).detach()
-        self.transition.values = self.actor_critic.evaluate(critic_obs if critic_obs is not None else obs).detach()
-        self.transition.actions_log_prob = self.actor_critic.get_actions_log_prob(self.transition.actions).detach()
+        self.transition.values = self.actor_critic.evaluate(
+            critic_obs if critic_obs is not None else obs
+        ).detach()
+        self.transition.actions_log_prob = self.actor_critic.get_actions_log_prob(
+            self.transition.actions
+        ).detach()
         self.transition.action_mean = self.actor_critic.action_mean.detach()
         self.transition.action_sigma = self.actor_critic.action_std.detach()
         # need to record obs and critic_obs before env.step()
@@ -159,7 +181,9 @@ class PPO:
             )  # This coef is per-auxiliary wise, will apply to all the rewards (if multiple rewards from the environment)
             if coef != 0.0:
                 # (num_envs, num_rewards) = scalar * (num_envs, num_rewards) * (1, num_rewards)
-                self.transition.rewards += coef * v * self.auxiliary_reward_per_env_reward_coefs
+                self.transition.rewards += (
+                    coef * v * self.auxiliary_reward_per_env_reward_coefs
+                )
             # Add the auxiliary rewards to info
             infos["step"][k] = v
 
@@ -167,7 +191,9 @@ class PPO:
         # Bootstrapping on time outs
         if "time_outs" in infos:
             self.transition.rewards += (
-                self.gamma * self.transition.values * infos["time_outs"].unsqueeze(1).to(self.device)
+                self.gamma
+                * self.transition.values
+                * infos["time_outs"].unsqueeze(1).to(self.device)
             )
 
         # Record the transition
@@ -176,7 +202,9 @@ class PPO:
         self.actor_critic.reset(dones)
 
     @torch.no_grad()
-    def compute_auxiliary_reward(self, obs_pack: dict[str, torch.Tensor]) -> dict[str, torch.Tensor]:
+    def compute_auxiliary_reward(
+        self, obs_pack: dict[str, torch.Tensor]
+    ) -> dict[str, torch.Tensor]:
         """Compute the auxiliary reward depending on the algorithms. Default PPO does not have auxiliary reward."""
         return dict()
 
@@ -189,9 +217,13 @@ class PPO:
         mean_losses = defaultdict(float)
         average_stats = defaultdict(float)
         if self.actor_critic.is_recurrent:
-            generator = self.storage.recurrent_mini_batch_generator(self.num_mini_batches, self.num_learning_epochs)
+            generator = self.storage.recurrent_mini_batch_generator(
+                self.num_mini_batches, self.num_learning_epochs
+            )
         else:
-            generator = self.storage.mini_batch_generator(self.num_mini_batches, self.num_learning_epochs)
+            generator = self.storage.mini_batch_generator(
+                self.num_mini_batches, self.num_learning_epochs
+            )
         for minibatch in generator:
             losses, _, stats = self.compute_losses(minibatch)
 
@@ -218,12 +250,22 @@ class PPO:
         return mean_losses, average_stats
 
     def compute_losses(self, minibatch):
-        actor_hidden_states = minibatch.hidden_states.actor if self.actor_critic.is_recurrent else None
-        self.actor_critic.act(minibatch.obs, masks=minibatch.masks, hidden_states=actor_hidden_states)
-        actions_log_prob_batch = self.actor_critic.get_actions_log_prob(minibatch.actions)
-        critic_hidden_states = minibatch.hidden_states.critic if self.actor_critic.is_recurrent else None
+        actor_hidden_states = (
+            minibatch.hidden_states.actor if self.actor_critic.is_recurrent else None
+        )
+        self.actor_critic.act(
+            minibatch.obs, masks=minibatch.masks, hidden_states=actor_hidden_states
+        )
+        actions_log_prob_batch = self.actor_critic.get_actions_log_prob(
+            minibatch.actions
+        )
+        critic_hidden_states = (
+            minibatch.hidden_states.critic if self.actor_critic.is_recurrent else None
+        )
         value_batch = self.actor_critic.evaluate(
-            minibatch.critic_obs, masks=minibatch.masks, hidden_states=critic_hidden_states
+            minibatch.critic_obs,
+            masks=minibatch.masks,
+            hidden_states=critic_hidden_states,
         )
         mu_batch = self.actor_critic.action_mean
         sigma_batch = self.actor_critic.action_std
@@ -237,7 +279,10 @@ class PPO:
             with torch.inference_mode():
                 kl = torch.sum(
                     torch.log(sigma_batch / minibatch.old_sigma + 1.0e-5)
-                    + (torch.square(minibatch.old_sigma) + torch.square(minibatch.old_mu - mu_batch))
+                    + (
+                        torch.square(minibatch.old_sigma)
+                        + torch.square(minibatch.old_mu - mu_batch)
+                    )
                     / (2.0 * torch.square(sigma_batch))
                     - 0.5,
                     axis=-1,
@@ -263,15 +308,23 @@ class PPO:
                     param_group["lr"] = self.learning_rate
 
         # Surrogate loss
-        ratio = torch.exp(actions_log_prob_batch - torch.squeeze(minibatch.old_actions_log_prob))
-        mixed_advantages = torch.mean(minibatch.advantages * self.advantage_mixing_weights, dim=-1)
+        ratio = torch.exp(
+            actions_log_prob_batch - torch.squeeze(minibatch.old_actions_log_prob)
+        )
+        mixed_advantages = torch.mean(
+            minibatch.advantages * self.advantage_mixing_weights, dim=-1
+        )
         surrogate = -mixed_advantages * ratio
-        surrogate_clipped = -mixed_advantages * torch.clamp(ratio, 1.0 - self.clip_param, 1.0 + self.clip_param)
+        surrogate_clipped = -mixed_advantages * torch.clamp(
+            ratio, 1.0 - self.clip_param, 1.0 + self.clip_param
+        )
         surrogate_loss = torch.max(surrogate, surrogate_clipped).mean()
 
         # Value function loss
         if self.use_clipped_value_loss:
-            value_clipped = minibatch.values + (value_batch - minibatch.values).clamp(-self.clip_param, self.clip_param)
+            value_clipped = minibatch.values + (value_batch - minibatch.values).clamp(
+                -self.clip_param, self.clip_param
+            )
             value_losses = (value_batch - minibatch.returns).pow(2)
             value_losses_clipped = (value_clipped - minibatch.returns).pow(2)
             value_loss = torch.max(value_losses, value_losses_clipped)
@@ -324,7 +377,9 @@ class PPO:
         if hasattr(self, "lr_scheduler"):
             self.lr_scheduler.load_state_dict(state_dict["lr_scheduler_state_dict"])
         elif "lr_scheduler_state_dict" in state_dict:
-            print("Warning: lr scheduler state dict loaded but no lr scheduler is initialized. Ignored.")
+            print(
+                "Warning: lr scheduler state dict loaded but no lr scheduler is initialized. Ignored."
+            )
 
     def distributed_data_parallel(self):
         """Enable distributed data parallel on the networks. Making sure the parameters are the same
@@ -351,6 +406,8 @@ class PPO:
                 if param.grad is not None:
                     dist.all_reduce(param.grad.data, op=dist.ReduceOp.SUM)
                     param.grad.data /= world_size
-        grad_norm = nn.utils.clip_grad_norm_(self.actor_critic.parameters(), self.max_grad_norm)
+        grad_norm = nn.utils.clip_grad_norm_(
+            self.actor_critic.parameters(), self.max_grad_norm
+        )
         average_stats["grad_norm"] = average_stats["grad_norm"] + grad_norm.detach()
         self.optimizer.step()
